@@ -44,6 +44,27 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        /* Estilo para a mensagem de erro crítica */
+        #critical-error-message {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background-color: #fee2e2; /* Red-100 */
+            border: 2px solid #ef4444; /* Red-500 */
+            border-radius: 12px;
+            color: #b91c1c; /* Red-700 */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        #critical-error-message h2 {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+        }
+        #critical-error-message ol {
+            list-style-type: decimal;
+            margin-left: 1.5rem;
+            line-height: 1.6;
+        }
     </style>
     <!-- Importações do Firebase -->
     <script type="module">
@@ -58,19 +79,46 @@
         let firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        // 2. CORREÇÃO: Se a configuração do Canvas estiver vazia, usa a configuração fixa do usuário (GitHub Pages)
+        // 2. Fallback para ambiente de hospedagem externa (GitHub Pages, Vercel, etc.)
         if (Object.keys(firebaseConfig).length === 0) {
-            console.log("Usando configuração fallback para ambiente de hospedagem externa.");
-            // SUBSTITUA ISTO PELA SUA CONFIGURAÇÃO REAL DO FIREBASE
-            // Esta chave é baseada nas suas imagens anteriores:
+            console.warn("Configuração do Firebase não carregada do Canvas. Usando Fallback.");
+            
+            // 🛑 🛑 🛑 CREDENCIAIS DO FIREBASE INSERIDAS A PARTIR DA SUA IMAGEM (image_2fe0ad.png) 🛑 🛑 🛑
             firebaseConfig = {
-                apiKey: "AIzaSyCKjV4Yoead4aOcdCcY1LRUbuy93fQR-w", 
-                authDomain: "fornecedorfinder.firebaseapp.com",
-                projectId: "fornecedorfinder",
-                storageBucket: "fornecedorfinder.appspot.com",
-                messagingSenderId: "1071206129990",
-                appId: "1:1071206129990:web:d713a69a03975549704e8d"
+                apiKey: "AIzaSyBxYpHFNcQFWL9xzWQErb8ixmsMO", 
+                authDomain: "fornecedor-518cc.firebaseapp.com",
+                projectId: "fornecedor-518cc", 
+                // Ajuste no storageBucket para o formato padrão do console
+                storageBucket: "fornecedor-518cc.appspot.com", 
+                messagingSenderId: "43676637193",
+                appId: "1:43676637193:web:f616d318cf8fb3c6ca5ce918" 
             };
+            
+            // VERIFICAÇÃO CRÍTICA DE PLACEHOLDERS (AGORA DESATIVADA POIS AS CREDENCIAIS FORAM INSERIDAS)
+            if (firebaseConfig.apiKey === "COLE_SEU_API_KEY_AQUI") {
+                 console.error("Configuração do Firebase ausente/inválida. Exibindo mensagem crítica.");
+                 document.addEventListener('DOMContentLoaded', () => {
+                    const appContainer = document.getElementById('app-container');
+                    appContainer.innerHTML = `
+                        <div id="critical-error-message" class="text-center">
+                            <h2>ERRO CRÍTICO: Configuração do Firebase Ausente/Inválida</h2>
+                            <p class="mb-4">Para que o aplicativo funcione, você deve registrar o seu app web no Firebase e inserir as credenciais no arquivo <code>index.html</code>.</p>
+                            
+                            <h3 class="font-semibold text-red-800 mb-2">Instruções para Obter as Credenciais:</h3>
+                            <ol class="text-left mx-auto max-w-md">
+                                <li><strong>Crie um App Web:</strong> No console do Firebase, vá em <strong>Configurações do Projeto</strong> (ícone de engrenagem) > <strong>Geral</strong>. Role até "Seus aplicativos" e clique no ícone <strong>&lt;/&gt; Web</strong>.</li>
+                                <li><strong>Registre o App:</strong> Dê um nome (ex: "FornecedorFinder Web") e siga o processo (não marque "Configurar o Firebase Hosting").</li>
+                                <li><strong>Copie as Credenciais:</strong> Na etapa seguinte, o Firebase fornecerá um objeto <code>firebaseConfig</code>. Copie **todos** os valores (apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId).</li>
+                                <li><strong>Substitua no Código:</strong> Cole esses valores no bloco <code>firebaseConfig</code> **deste arquivo** (linha 69, aproximadamente), substituindo os placeholders <code>COLE_SEU_..._AQUI</code>.</li>
+                                <li><strong>Verifique a Autenticação:</strong> Certifique-se de que o **Login Anônimo** e o **Cloud Firestore** estão habilitados no seu console Firebase, conforme as instruções anteriores.</li>
+                            </ol>
+                            <p class="mt-4 font-semibold">Após substituir as credenciais, atualize o arquivo e recarregue a página.</p>
+                        </div>
+                    `;
+                 });
+                 // Impede a inicialização do Firebase se as credenciais estiverem faltando
+                 return; 
+            }
         }
 
         // --- INICIALIZAÇÃO E AUTENTICAÇÃO ---
@@ -80,57 +128,59 @@
         let userId = null;
         let isAuthReady = false;
 
-        if (Object.keys(firebaseConfig).length > 0) {
-            app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-
-            onAuthStateChanged(auth, async (user) => {
-                if (user) {
-                    userId = user.uid;
-                } else {
-                    try {
-                        // Tenta autenticar anonimamente se o token não estiver presente
-                        await signInAnonymously(auth);
-                        userId = auth.currentUser.uid;
-                    } catch (error) {
-                        console.error("Erro ao fazer login anônimo:", error);
-                        document.getElementById('userIdDisplay').textContent = `ERRO FATAL: Falha na Autenticação Firebase! Verifique as Regras de Segurança e o status do Login Anônimo no console.`;
-                        document.getElementById('userIdDisplay').classList.add('text-red-500');
-                        return; // Impede o restante da execução em caso de falha de Auth
-                    }
+        
+        app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+        
+        // Listener de Autenticação
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+            } else {
+                try {
+                    // Tenta autenticar anonimamente (necessário para persistência de dados)
+                    await signInAnonymously(auth);
+                    userId = auth.currentUser.uid;
+                } catch (error) {
+                    console.error("Erro ao fazer login anônimo:", error);
+                    document.getElementById('userIdDisplay').textContent = `ERRO FATAL: Falha na Autenticação Firebase! Verifique as Regras de Segurança e o status do Login Anônimo no console.`;
+                    document.getElementById('userIdDisplay').classList.add('text-red-500');
+                    return; // Impede o restante da execução em caso de falha de Auth
                 }
+            }
 
-                // Autenticação com Custom Token (Prioridade do Canvas)
-                if (initialAuthToken && !user) {
-                    try {
-                        await signInWithCustomToken(auth, initialAuthToken);
-                        userId = auth.currentUser.uid;
-                    } catch (error) {
-                        console.error("Erro ao fazer login com token personalizado:", error);
-                        // Fallback para anônimo se o token falhar
-                        await signInAnonymously(auth);
-                        userId = auth.currentUser.uid;
-                    }
+            // Autenticação com Custom Token (Prioridade do Canvas, se aplicável)
+            if (initialAuthToken && !user) {
+                try {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                    userId = auth.currentUser.uid;
+                } catch (error) {
+                    console.error("Erro ao fazer login com token personalizado:", error);
+                    // Fallback para anônimo se o token falhar
+                    await signInAnonymously(auth);
+                    userId = auth.currentUser.uid;
                 }
-                isAuthReady = true;
-                document.getElementById('userIdDisplay').textContent = `ID do Usuário: ${userId}`;
-                console.log("Firebase Auth e Firestore prontos. User ID:", userId);
-                
-                // Inicia o listener de dados após a autenticação
-                if(db && userId) {
-                    setupRealtimeListener(db, userId, appId);
-                }
-            });
-        } else {
-            console.error("Configuração do Firebase não encontrada. O aplicativo não funcionará corretamente.");
-            document.getElementById('app-container').innerHTML = '<div class="text-center p-8 text-red-500 font-bold">Erro: Configuração do Firebase ausente. Por favor, insira as chaves no código.</div>';
-        }
-
+            }
+            
+            isAuthReady = true;
+            document.getElementById('userIdDisplay').textContent = `ID do Usuário: ${userId}`;
+            console.log("Firebase Auth e Firestore prontos. User ID:", userId);
+            
+            // Inicia o listener de dados após a autenticação
+            if(db && userId) {
+                setupRealtimeListener(db, userId, appId);
+            }
+        });
+        
         // --- FUNÇÕES DE UTILITY FIREBASE ---
         const getSupplierCollectionRef = (db, userId, appId) => {
             if (!db || !userId) return null;
-            // Caminho para dados privados: /artifacts/{appId}/users/{userId}/{collectionName}
+            // Caminho para dados privados: /artifacts/{appId}/users/{userId}/fornecedores
+            // Para isso funcionar, a REGRA DO FIRESTORE deve permitir:
+            // match /artifacts/{appId}/users/{userId}/{collectionName}/{document=**} {
+            //    allow read, write: if request.auth != null && request.auth.uid == userId;
+            // }
             return collection(db, `artifacts/${appId}/users/${userId}/fornecedores`);
         };
 
@@ -209,6 +259,7 @@
                 return;
             }
 
+            // Ordena os fornecedores pela data de cadastro
             suppliers.sort((a, b) => (b.dataCadastro?.toMillis() || 0) - (a.dataCadastro?.toMillis() || 0));
 
             suppliers.forEach(supplier => {
@@ -250,7 +301,8 @@
                     return;
                 }
                 const reader = new FileReader();
-                reader.onload = () => resolve(reader.result.split(',')[1]);
+                // O método readAsDataURL retorna o formato 'data:mime/type;base64,...'
+                reader.onload = () => resolve(reader.result.split(',')[1]); 
                 reader.onerror = error => reject(error);
                 reader.readAsDataURL(file);
             });
@@ -260,7 +312,8 @@
             event.preventDefault();
             
             const queryText = document.getElementById('queryText').value;
-            const queryImage = document.getElementById('queryImage').files[0];
+            const queryImageInput = document.getElementById('queryImage');
+            const queryImage = queryImageInput.files[0];
             const resultDiv = document.getElementById('aiResult');
             const btn = document.getElementById('aiQueryBtn');
 
@@ -279,11 +332,12 @@
             resultDiv.innerHTML = '<p class="text-center text-gray-500 mt-4">Aguarde a análise dos catálogos pela IA...</p>';
 
             try {
-                const base64Image = await fileToBase64(queryImage);
+                // Se o input de imagem for usado, converte o arquivo em Base64
+                const base64Image = queryImage ? await fileToBase64(queryImage) : null;
                 const catalogContext = window.allCatalogContext;
                 
                 // 1. System Instruction: Define o papel da IA
-                const systemPrompt = `Você é um 'FornecedorFinder AI', um especialista em análise de catálogos e busca de produtos. Sua tarefa é analisar a consulta do cliente e o contexto dos catálogos de fornecedores fornecidos. Você DEVE determinar qual fornecedor, com base nos 'DETALHES DO CATÁLOGO', oferece a melhor solução. Sua resposta deve ser concisa e focada, mencionando o nome do fornecedor e o motivo da escolha.
+                const systemPrompt = `Você é um 'FornecedorFinder AI', um especialista em análise de catálogos e busca de produtos. Sua tarefa é analisar a consulta do cliente (texto e/ou imagem) e o contexto dos catálogos de fornecedores fornecidos. Você DEVE determinar qual fornecedor, com base nos 'DETALHES DO CATÁLOGO', oferece a melhor solução. Sua resposta deve ser concisa e focada, mencionando o nome do fornecedor e o motivo da escolha.
 
                 O contexto dos catálogos segue o formato:
                 --- FORNECEDOR: [Nome] / SEGMENTO: [Segmento] ---
@@ -300,6 +354,7 @@
                 // Adiciona o contexto dos catálogos e a consulta do cliente
                 parts.push({ text: `CONTEÚDO TOTAL DOS CATÁLOGOS PARA ANÁLISE:\n${catalogContext}\n\n--- CONSULTA DO CLIENTE ---\nConsulta Textual: "${queryText}"\n\nCom base no contexto acima, qual fornecedor e URL de referência melhor atende à consulta?` });
                 
+                // Se houver imagem, adiciona a parte inlineData
                 if (base64Image) {
                     parts.push({
                         inlineData: {
@@ -312,7 +367,7 @@
                 const payload = {
                     contents: [{ role: "user", parts: parts }],
                     systemInstruction: { parts: [{ text: systemPrompt }] },
-                    // Não usa grounding, pois a resposta deve vir EXCLUSIVAMENTE dos catálogos fornecidos (catalogText)
+                    // Não usa grounding (tools), pois a resposta deve vir EXCLUSIVAMENTE dos catálogos fornecidos (catalogText)
                 };
 
                 const apiKey = ""; // Deixar vazio, será preenchido pelo ambiente
@@ -329,6 +384,7 @@
                         });
                         if (fetchResponse.status === 429 && attempt < 2) {
                             const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                            console.warn(`Tentativa ${attempt + 1}: Rate limit atingido. Tentando novamente em ${delay.toFixed(0)}ms.`);
                             await new Promise(resolve => setTimeout(resolve, delay));
                             continue;
                         }
@@ -337,12 +393,15 @@
                     } catch (err) {
                         if (attempt === 2) throw err;
                         const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                        console.warn(`Tentativa ${attempt + 1}: Erro de rede. Tentando novamente em ${delay.toFixed(0)}ms.`, err);
                         await new Promise(resolve => setTimeout(resolve, delay));
                     }
                 }
 
                 if (!response || !response.ok) {
-                    throw new Error(`Erro na API: ${response?.statusText || 'Falha na rede'}`);
+                    const errorBody = await response.text();
+                    console.error("Resposta da API de erro:", errorBody);
+                    throw new Error(`Erro na API: ${response?.statusText || 'Falha na rede'} - Detalhes: ${errorBody.substring(0, 100)}...`);
                 }
 
                 const result = await response.json();
