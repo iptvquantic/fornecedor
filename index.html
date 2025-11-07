@@ -53,8 +53,25 @@
         
         // --- VARIÁVEIS GLOBAIS FIREBASE/APP ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        
+        // 1. Tenta carregar a configuração do ambiente Canvas (se estiver rodando no Immersive)
+        let firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // 2. CORREÇÃO: Se a configuração do Canvas estiver vazia, usa a configuração fixa do usuário (GitHub Pages)
+        if (Object.keys(firebaseConfig).length === 0) {
+            console.log("Usando configuração fallback para ambiente de hospedagem externa.");
+            // SUBSTITUA ISTO PELA SUA CONFIGURAÇÃO REAL DO FIREBASE
+            // Esta chave é baseada nas suas imagens anteriores:
+            firebaseConfig = {
+                apiKey: "AIzaSyCKjV4Yoead4aOcdCcY1LRUbuy93fQR-w", 
+                authDomain: "fornecedorfinder.firebaseapp.com",
+                projectId: "fornecedorfinder",
+                storageBucket: "fornecedorfinder.appspot.com",
+                messagingSenderId: "1071206129990",
+                appId: "1:1071206129990:web:d713a69a03975549704e8d"
+            };
+        }
 
         // --- INICIALIZAÇÃO E AUTENTICAÇÃO ---
         let app;
@@ -78,10 +95,13 @@
                         userId = auth.currentUser.uid;
                     } catch (error) {
                         console.error("Erro ao fazer login anônimo:", error);
+                        document.getElementById('userIdDisplay').textContent = `ERRO FATAL: Falha na Autenticação Firebase! Verifique as Regras de Segurança e o status do Login Anônimo no console.`;
+                        document.getElementById('userIdDisplay').classList.add('text-red-500');
+                        return; // Impede o restante da execução em caso de falha de Auth
                     }
                 }
 
-                // Autenticação com Custom Token
+                // Autenticação com Custom Token (Prioridade do Canvas)
                 if (initialAuthToken && !user) {
                     try {
                         await signInWithCustomToken(auth, initialAuthToken);
@@ -104,7 +124,7 @@
             });
         } else {
             console.error("Configuração do Firebase não encontrada. O aplicativo não funcionará corretamente.");
-            document.getElementById('app-container').innerHTML = '<div class="text-center p-8 text-red-500 font-bold">Erro: Configuração do Firebase ausente.</div>';
+            document.getElementById('app-container').innerHTML = '<div class="text-center p-8 text-red-500 font-bold">Erro: Configuração do Firebase ausente. Por favor, insira as chaves no código.</div>';
         }
 
         // --- FUNÇÕES DE UTILITY FIREBASE ---
@@ -117,9 +137,9 @@
         // --- MÓDULO DE CADASTRO (INDEXAÇÃO) ---
         window.handleSupplierSubmit = async (event) => {
             event.preventDefault();
-            if (!db || !userId) {
+            if (!db || !userId || !isAuthReady) {
                 console.error("Firestore não inicializado ou userId ausente.");
-                showMessage('Erro: Sistema não está pronto. Tente novamente.', 'error');
+                showMessage('Erro: Sistema não está pronto ou falha de autenticação.', 'error');
                 return;
             }
 
@@ -154,7 +174,7 @@
                 showMessage('Fornecedor cadastrado com sucesso!', 'success');
             } catch (e) {
                 console.error("Erro ao adicionar documento: ", e);
-                showMessage('Erro ao salvar fornecedor. Verifique o console.', 'error');
+                showMessage('Erro ao salvar fornecedor. Verifique o console. (Provavelmente Regras de Segurança)', 'error');
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = originalText;
