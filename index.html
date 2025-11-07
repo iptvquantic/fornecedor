@@ -1,335 +1,377 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FornecedorFinder AI</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
-                    colors: {
-                        'primary': '#1E3A8A', // Cor primária (azul escuro)
-                        'secondary': '#3B82F6', // Cor de destaque (azul claro)
-                        'accent': '#F59E0B', // Amarelo para destaque
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        /* Estilo customizado para a caixa de erro */
-        .error-message {
-            background-color: #FEF2F2;
-            border: 1px solid #F87171;
-            color: #B91C1C;
-            padding: 1rem;
-            margin-top: 1rem;
-            border-radius: 0.5rem;
-            text-align: center;
-            font-weight: 600;
-        }
-    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FornecedorFinder AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        'primary': '#1E3A8A', // Cor primária (azul escuro)
+                        'secondary': '#3B82F6', // Cor de destaque (azul claro)
+                        'accent': '#F59E0B', // Amarelo para destaque
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Estilo customizado para a caixa de erro */
+        .error-message {
+            background-color: #FEF2F2;
+            border: 1px solid #F87171;
+            color: #B91C1C;
+            padding: 1rem;
+            margin-top: 1rem;
+            border-radius: 0.5rem;
+            text-align: center;
+            font-weight: 600;
+        }
+    </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
 
-    <!-- Configuração e Imports do Firebase -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        // MUDANÇA: Importando signInWithEmailAndPassword em vez de signInAnonymously
+        import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // ======================================================================
-        // CREDENCIAIS FIREBASE INSERIDAS AUTOMATICAMENTE
-        // ======================================================================
-        const firebaseConfig = {
-             apiKey: "AIzaSyBsyaxPPhNQFWL9xZWQXERb0vimsSMo", 
-             authDomain: "fornecedor-518cc.firebaseapp.com",
-             projectId: "fornecedor-518cc",
-             storageBucket: "fornecedor-518cc.appspot.com",
-             messagingSenderId: "436766837193",
-             appId: "1:436766837193:web:616d318c9fb3c6ca5ce918"
-        };
-        // ======================================================================
-        
-        // As variáveis globais abaixo são injetadas pelo ambiente Canvas.
-        // Usamos um fallback seguro caso elas não estejam disponíveis.
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        
-        // Variaveis de escopo global para o Firebase (serão preenchidas no init)
-        let db;
-        let auth;
-        let currentUserId = null;
+        // ======================================================================
+        // CREDENCIAIS FIREBASE INSERIDAS AUTOMATICAMENTE
+        // ======================================================================
+        const firebaseConfig = {
+             apiKey: "AIzaSyBsyaxPPhNQFWL9xZWQXERb0vimsSMo", 
+             authDomain: "fornecedor-518cc.firebaseapp.com",
+             projectId: "fornecedor-518cc",
+             storageBucket: "fornecedor-518cc.appspot.com",
+             messagingSenderId: "436766837193",
+             appId: "1:436766837193:web:616d318c9fb3c6ca5ce918"
+        };
+        // ======================================================================
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        
+        let db;
+        let auth;
+        let currentUserId = null;
 
-        // Função para mostrar mensagens no UI
-        const displayStatus = (text, isError = false) => {
-            const statusElement = document.getElementById('auth-status');
-            if (!statusElement) return;
+        // Função para mostrar mensagens no UI
+        const displayStatus = (text, isError = false) => {
+            const statusElement = document.getElementById('auth-status');
+            if (!statusElement) return;
 
-            statusElement.textContent = text;
-            if (isError) {
-                statusElement.className = 'error-message';
-            } else {
-                statusElement.className = 'text-lg font-medium text-primary mt-2';
-            }
-        };
-
-        // Função para carregar e exibir os fornecedores em tempo real
-        const loadFornecedores = () => {
-            if (!currentUserId || !db) return;
-
-            // O caminho completo da coleção privada é: /artifacts/{appId}/users/{userId}/fornecedores
-            const collectionPath = `/artifacts/${appId}/users/${currentUserId}/fornecedores`;
-            const fornecedorCollection = collection(db, collectionPath);
-            const fornecedoresListElement = document.getElementById('fornecedores-list');
-            
-            // Usa onSnapshot para escutar em tempo real
-            onSnapshot(fornecedorCollection, (snapshot) => {
-                fornecedoresListElement.innerHTML = ''; // Limpa a lista
-                
-                if (snapshot.empty) {
-                    fornecedoresListElement.innerHTML = '<p class="text-gray-500 italic">Nenhum fornecedor cadastrado ainda.</p>';
-                    return;
-                }
-
-                snapshot.forEach(doc => {
-                    const data = doc.data();
-                    const docId = doc.id; // ID único do documento no Firestore
-
-                    const listItem = document.createElement('div');
-                    listItem.className = 'p-3 mb-2 bg-gray-50 border border-gray-200 rounded-md shadow-sm';
-                    listItem.innerHTML = `
-                        <p class="font-bold text-primary">${data.nome}</p>
-                        <p class="text-sm text-gray-700">Segmento: ${data.segmento}</p>
-                        <p class="text-xs text-gray-500 truncate">ID: ${docId}</p>
-                        <p class="text-xs text-gray-500 mt-1">Texto Indexado: ${data.catalogoText.substring(0, 100)}...</p>
-                        ${data.urlCatalogo ? `<a href="${data.urlCatalogo}" target="_blank" class="text-xs text-secondary hover:underline">Ver Catálogo</a>` : ''}
-                    `;
-                    fornecedoresListElement.appendChild(listItem);
-                });
-
-            }, (error) => {
-                console.error("Erro ao carregar fornecedores: ", error);
-                fornecedoresListElement.innerHTML = `<p class="error-message">Erro ao carregar dados: ${error.message}</p>`;
-            });
-        };
+            statusElement.textContent = text;
+            if (isError) {
+                // Mantém o estilo de erro mas com uma cor mais suave para status
+                statusElement.className = 'text-center p-2 rounded-md bg-red-100 text-red-700 font-semibold mt-2';
+            } else {
+                statusElement.className = 'text-lg font-medium text-primary mt-2';
+            }
+        };
 
 
-        // Função para inicializar o Firebase e tentar o login anônimo
-        const initializeFirebase = async () => {
-            try {
-                // 1. Inicializa o App e serviços
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                
-                // Configura o log para debug (útil para ver o que está acontecendo)
-                setLogLevel('debug');
+        // NOVO: Função para manipular o Login com E-mail/Senha
+        window.handleLogin = async () => {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginSenha').value;
+            const loginButton = document.getElementById('login-button');
 
-                displayStatus("Aguardando autenticação...");
+            if (!email || !password) {
+                displayStatus("Preencha e-mail e senha.", true);
+                return;
+            }
 
-                // 2. Tenta fazer login anonimamente
-                const userCredential = await signInAnonymously(auth);
-                const user = userCredential.user;
-                currentUserId = user.uid;
+            loginButton.disabled = true;
+            displayStatus("Tentando logar...");
 
-                // Verificando se as regras de segurança estão corretas (allow read, write: if request.auth != null)
-                // O caminho correto no Firestore para dados privados: artifacts/{appId}/users/{userId}/fornecedores
-                console.log("UID obtido:", currentUserId);
-                console.log("Caminho esperado da coleção:", `/artifacts/${appId}/users/${currentUserId}/fornecedores`);
+            try {
+                // 1. Tenta fazer login com Email e Senha
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
+                currentUserId = user.uid;
 
+                // 2. Autenticado com sucesso!
+                displayStatus(`Logado com sucesso. ID: ${currentUserId.substring(0, 8)}...`);
 
-                displayStatus(`Autenticado com sucesso. ID do Usuário: ${currentUserId.substring(0, 8)}...`);
-                console.log("Autenticação Anônima bem-sucedida. UID:", currentUserId);
-                
-                // Habilita as áreas de interação após o login
-                document.getElementById('cadastro-section').classList.remove('opacity-50', 'pointer-events-none');
-                document.getElementById('consulta-section').classList.remove('opacity-50', 'pointer-events-none');
-                document.getElementById('listagem-section').classList.remove('opacity-50', 'pointer-events-none');
-                
-                // CHAMA A FUNÇÃO DE CARREGAMENTO DE DADOS AQUI
-                loadFornecedores(); 
+                // 3. Esconde a tela de login e mostra as funcionalidades
+                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('main-content').classList.remove('hidden');
 
-            } catch (error) {
-                console.error("ERRO FATAL DE AUTENTICAÇÃO/FIREBASE:", error);
-                // Adicionando instrução para o usuário verificar a autenticação e regras
-                displayStatus("ERRO FATAL: Falha na Autenticação Firebase! Verifique as Regras de Segurança e o status do Login Anônimo no console.", true);
-            }
-        };
+                // Habilita e carrega as áreas de interação após o login
+                document.getElementById('cadastro-section').classList.remove('opacity-50', 'pointer-events-none');
+                document.getElementById('consulta-section').classList.remove('opacity-50', 'pointer-events-none');
+                document.getElementById('listagem-section').classList.remove('opacity-50', 'pointer-events-none');
+                
+                loadFornecedores(); 
 
-        // Chama a função de inicialização assim que o script é carregado
-        initializeFirebase();
+            } catch (error) {
+                console.error("ERRO DE LOGIN:", error);
+                // Informa ao usuário que o login falhou
+                displayStatus("Falha no Login. Verifique suas credenciais e se a autenticação E-mail/Senha está ativada no Firebase.", true);
+            } finally {
+                loginButton.disabled = false;
+            }
+        };
 
 
-        // Funções de CRUD para Cadastro de Fornecedor
-        window.cadastrarFornecedor = async () => {
-            if (!currentUserId || !db) {
-                displayStatus("Erro: O usuário não está autenticado. Tente recarregar.", true);
-                return;
-            }
+        // Função para carregar e exibir os fornecedores em tempo real (Sem Alterações)
+        const loadFornecedores = () => {
+            if (!currentUserId || !db) return;
 
-            // Pega os valores do formulário
-            const nome = document.getElementById('nomeFornecedor').value;
-            const segmento = document.getElementById('segmento').value;
-            const urlCatalogo = document.getElementById('urlCatalogo').value;
-            const catalogoText = document.getElementById('catalogoText').value;
+            // O caminho completo da coleção privada é: /artifacts/{appId}/users/{userId}/fornecedores
+            const collectionPath = `/artifacts/${appId}/users/${currentUserId}/fornecedores`;
+            const fornecedorCollection = collection(db, collectionPath);
+            const fornecedoresListElement = document.getElementById('fornecedores-list');
+            
+            // Usa onSnapshot para escutar em tempo real
+            onSnapshot(fornecedorCollection, (snapshot) => {
+                fornecedoresListElement.innerHTML = ''; // Limpa a lista
+                
+                if (snapshot.empty) {
+                    fornecedoresListElement.innerHTML = '<p class="text-gray-500 italic">Nenhum fornecedor cadastrado ainda.</p>';
+                    return;
+                }
 
-            if (!nome || !segmento || !catalogoText) {
-                displayStatus("Preencha o Nome, Segmento e Conteúdo Textual do Catálogo para cadastrar.", true);
-                return;
-            }
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const docId = doc.id; // ID único do documento no Firestore
 
-            try {
-                // Caminho da coleção privada
-                const collectionPath = `/artifacts/${appId}/users/${currentUserId}/fornecedores`;
-                const fornecedorCollection = collection(db, collectionPath);
-                
-                // Dados a serem salvos
-                const novoFornecedor = {
-                    nome: nome,
-                    segmento: segmento,
-                    urlCatalogo: urlCatalogo,
-                    catalogoText: catalogoText,
-                    dataCriacao: new Date(),
-                    userId: currentUserId // Garante o ownership
-                };
+                    const listItem = document.createElement('div');
+                    listItem.className = 'p-3 mb-2 bg-gray-50 border border-gray-200 rounded-md shadow-sm';
+                    listItem.innerHTML = `
+                        <p class="font-bold text-primary">${data.nome}</p>
+                        <p class="text-sm text-gray-700">Segmento: ${data.segmento}</p>
+                        <p class="text-xs text-gray-500 truncate">ID: ${docId}</p>
+                        <p class="text-xs text-gray-500 mt-1">Texto Indexado: ${data.catalogoText.substring(0, 100)}...</p>
+                        ${data.urlCatalogo ? `<a href="${data.urlCatalogo}" target="_blank" class="text-xs text-secondary hover:underline">Ver Catálogo</a>` : ''}
+                    `;
+                    fornecedoresListElement.appendChild(listItem);
+                });
 
-                // Adiciona um novo documento
-                await addDoc(fornecedorCollection, novoFornecedor);
-                displayStatus("Fornecedor cadastrado com sucesso!", false);
-                console.log("Fornecedor cadastrado:", novoFornecedor);
-
-                // Limpar formulário 
-                document.getElementById('nomeFornecedor').value = '';
-                document.getElementById('segmento').value = '';
-                document.getElementById('urlCatalogo').value = '';
-                document.getElementById('catalogoText').value = '';
-
-            } catch (e) {
-                console.error("Erro ao adicionar documento: ", e);
-                displayStatus("Erro ao salvar fornecedor. Verifique as Regras de Segurança e o console.", true);
-            }
-        };
-
-        // Exporta instâncias globais
-        window.db = db;
-        window.auth = auth;
-        window.getUserId = () => currentUserId;
+            }, (error) => {
+                console.error("Erro ao carregar fornecedores: ", error);
+                fornecedoresListElement.innerHTML = `<p class="error-message">Erro ao carregar dados: ${error.message}</p>`;
+            });
+        };
 
 
-    </script>
+        // MODIFICADO: Função para inicializar o Firebase. Removemos o login anônimo.
+        const initializeFirebase = async () => {
+            try {
+                // 1. Inicializa o App e serviços
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                // Configura o log para debug (útil para ver o que está acontecendo)
+                setLogLevel('debug');
 
-    <!-- Cabeçalho -->
-    <header class="w-full max-w-4xl bg-white p-6 rounded-lg shadow-lg text-center mb-6">
-        <h1 class="text-3xl font-extrabold text-primary">FornecedorFinder AI</h1>
-        <p class="text-gray-600 mt-2">Gerenciamento inteligente de catálogos e consultas via Gemini AI</p>
-        <div id="auth-status" class="text-lg font-medium text-primary mt-2">Aguardando inicialização...</div>
-    </header>
+                displayStatus("Firebase inicializado. Por favor, faça o login.");
 
-    <!-- Layout Principal -->
-    <main class="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        <!-- 1. Cadastro (Indexação) -->
-        <section id="cadastro-section" class="bg-white p-6 rounded-lg shadow-lg opacity-50 pointer-events-none transition-opacity">
-            <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2 border-secondary">1. Cadastro (Indexação)</h2>
-            <form onsubmit="event.preventDefault(); cadastrarFornecedor();">
-                <div class="mb-4">
-                    <label for="nomeFornecedor" class="block text-sm font-medium text-gray-700">Nome do Fornecedor *</label>
-                    <input type="text" id="nomeFornecedor" required placeholder="Ex: Metalurgia Brasil"
-                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-secondary focus:border-secondary">
-                </div>
+                // Por padrão, a tela de login aparecerá. Se você quiser persistir a sessão,
+                // adicione um listener 'onAuthStateChanged' para verificar o usuário.
 
-                <div class="mb-4">
-                    <label for="segmento" class="block text-sm font-medium text-gray-700">Segmento *</label>
-                    <input type="text" id="segmento" required placeholder="Ex: Metalurgia, Software, Logística"
-                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-secondary focus:border-secondary">
-                </div>
-                
-                <div class="mb-4">
-                    <label for="urlCatalogo" class="block text-sm font-medium text-gray-700">URL de Catálogo (Opcional)</label>
-                    <input type="url" id="urlCatalogo" placeholder="http://exemplo.com/catalogo.pdf"
-                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-secondary focus:border-secondary">
-                </div>
+            } catch (error) {
+                console.error("ERRO FATAL NA INICIALIZAÇÃO DO FIREBASE:", error);
+                displayStatus("ERRO FATAL: Falha na Inicialização do Firebase. Verifique o console para detalhes.", true);
+            }
+        };
 
-                <div class="mb-4">
-                    <label for="catalogoText" class="block text-sm font-medium text-gray-700">Conteúdo Textual do Catálogo (catalogText)*</label>
-                    <textarea id="catalogoText" rows="6" required placeholder="Cole aqui todas as especificações, descrições detalhadas dos produtos e serviços..."
-                              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-secondary focus:border-secondary"></textarea>
-                </div>
-                
-                <button type="submit"
-                        class="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary transition duration-150">
-                    Cadastrar Fornecedor (Indexar)
-                </button>
-            </form>
-        </section>
+        // Chama a função de inicialização assim que o script é carregado
+        initializeFirebase();
 
-        <!-- 2. Consulta Inteligente (AI) -->
-        <section id="consulta-section" class="bg-white p-6 rounded-lg shadow-lg opacity-50 pointer-events-none transition-opacity">
-            <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2 border-secondary">2. Consulta Inteligente (AI)</h2>
-            <div class="mb-4">
-                <label for="consultaTexto" class="block text-sm font-medium text-gray-700">Consulta do Cliente (Texto)</label>
-                <textarea id="consultaTexto" rows="3" placeholder="Ex: Preciso de um motor elétrico de alta eficiência para operar em 220V com potência mínima de 5kW."
-                          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-secondary focus:border-secondary"></textarea>
-            </div>
 
-            <div class="mb-6">
-                <label for="consultaImagem" class="block text-sm font-medium text-gray-700">Consulta do Cliente (Imagem - Opcional)</label>
-                <input type="file" id="consultaImagem" accept="image/*" class="mt-1 block w-full text-sm text-gray-500
-                    file:mr-4 file:py-2 file:px-4
-                    file:rounded-full file:border-0
-                    file:text-sm file:font-semibold
-                    file:bg-primary file:text-white
-                    hover:file:bg-secondary">
-                <p class="text-xs text-gray-500 mt-1">Busca multimodal: o texto da consulta será combinado com a imagem.</p>
-            </div>
-            
-            <button onclick="realizarConsultaAI()"
-                    class="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-lg font-medium text-white bg-secondary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150">
-                Consultar Fornecedor
-            </button>
-            
-            <div class="mt-6 p-4 bg-gray-50 rounded-md border border-gray-200">
-                <p class="text-sm font-semibold text-gray-700">Resultados da IA</p>
-                <div id="resultadoIA" class="mt-2 text-gray-800 italic">
-                    Os resultados da IA aparecerão aqui após a consulta.
-                </div>
-            </div>
-        </section>
-    </main>
-    
-    <!-- Nova Seção de Listagem de Fornecedores -->
-    <section id="listagem-section" class="w-full max-w-4xl bg-white p-6 rounded-lg shadow-lg mt-6 opacity-50 pointer-events-none transition-opacity">
-        <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2 border-accent">3. Fornecedores Cadastrados</h2>
-        <div id="fornecedores-list" class="space-y-3">
-            <p class="text-gray-500 italic">Carregando fornecedores...</p>
-        </div>
-    </section>
-    
-    <footer class="mt-8 text-center text-sm text-gray-500">
-        Criado com Google Gemini e Firebase.
-    </footer>
+        // Funções de CRUD para Cadastro de Fornecedor (Sem Alterações na lógica)
+        window.cadastrarFornecedor = async () => {
+            // ... (Lógica de cadastro)
+            if (!currentUserId || !db) {
+                displayStatus("Erro: O usuário não está autenticado. Tente recarregar ou logar novamente.", true);
+                return;
+            }
 
-    <!-- Adicionar o script do Gemini API (Placeholder para futuras implementações) -->
-    <script>
-        // Placeholder para a função de consulta da IA
-        function realizarConsultaAI() {
-            // Este é o lugar onde a lógica de chamada ao Gemini API (com o Firestore como fonte) será implementada.
-            document.getElementById('resultadoIA').innerHTML = `<p class="text-accent">Processando consulta...</p>`;
-            console.log("Iniciando consulta à IA...");
-            
-            // Simulação de delay para a API
-            setTimeout(() => {
-                document.getElementById('resultadoIA').innerHTML = `
-                    <p class="font-bold text-green-700">Consulta Concluída (Simulação)</p>
-                    <p class="text-sm">Nenhum fornecedor encontrado no seu catálogo que atenda a essa especificação. Por favor, tente cadastrar mais fornecedores.</p>
-                `;
-            }, 3000);
-        }
-    </script>
+            // Pega os valores do formulário
+            const nome = document.getElementById('nomeFornecedor').value;
+            const segmento = document.getElementById('segmento').value;
+            const urlCatalogo = document.getElementById('urlCatalogo').value;
+            const catalogoText = document.getElementById('catalogoText').value;
+
+            if (!nome || !segmento || !catalogoText) {
+                displayStatus("Preencha o Nome, Segmento e Conteúdo Textual do Catálogo para cadastrar.", true);
+                return;
+            }
+
+            try {
+                // Caminho da coleção privada
+                const collectionPath = `/artifacts/${appId}/users/${currentUserId}/fornecedores`;
+                const fornecedorCollection = collection(db, collectionPath);
+                
+                // Dados a serem salvos
+                const novoFornecedor = {
+                    nome: nome,
+                    segmento: segmento,
+                    urlCatalogo: urlCatalogo,
+                    catalogoText: catalogoText,
+                    dataCriacao: new Date(),
+                    userId: currentUserId // Garante o ownership
+                };
+
+                // Adiciona um novo documento
+                await addDoc(fornecedorCollection, novoFornecedor);
+                displayStatus("Fornecedor cadastrado com sucesso!", false);
+                console.log("Fornecedor cadastrado:", novoFornecedor);
+
+                // Limpar formulário 
+                document.getElementById('nomeFornecedor').value = '';
+                document.getElementById('segmento').value = '';
+                document.getElementById('urlCatalogo').value = '';
+                document.getElementById('catalogoText').value = '';
+
+            } catch (e) {
+                console.error("Erro ao adicionar documento: ", e);
+                displayStatus("Erro ao salvar fornecedor. Verifique as Regras de Segurança e o console.", true);
+            }
+        };
+
+        // Exporta instâncias globais
+        window.db = db;
+        window.auth = auth;
+        window.getUserId = () => currentUserId;
+
+
+    </script>
+
+        <header class="w-full max-w-4xl bg-white p-6 rounded-lg shadow-lg text-center mb-6">
+        <h1 class="text-3xl font-extrabold text-primary">FornecedorFinder AI</h1>
+        <p class="text-gray-600 mt-2">Gerenciamento inteligente de catálogos e consultas via Gemini AI</p>
+        <div id="auth-status" class="text-lg font-medium text-primary mt-2">Aguardando inicialização...</div>
+    </header>
+    
+        <section id="login-section" class="w-full max-w-sm bg-white p-8 rounded-lg shadow-xl border-t-4 border-primary">
+        <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Acesso Pessoal</h2>
+        <p class="text-sm text-center text-red-600 mb-4 font-semibold">Necessário configurar o usuário e senha no Console do Firebase!</p>
+        <form onsubmit="event.preventDefault(); handleLogin();">
+            <div class="mb-4">
+                <label for="loginEmail" class="block text-sm font-medium text-gray-700">E-mail (ou Usuário)</label>
+                <input type="email" id="loginEmail" required value="admin@exemplo.com"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-secondary focus:border-secondary">
+            </div>
+            <div class="mb-6">
+                <label for="loginSenha" class="block text-sm font-medium text-gray-700">Senha</label>
+                <input type="password" id="loginSenha" required value="admin"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-secondary focus:border-secondary">
+            </div>
+            <button type="submit" id="login-button"
+                    class="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-base font-semibold text-white bg-primary hover:bg-secondary transition duration-150">
+                Entrar
+            </button>
+        </form>
+    </section>
+
+
+        <div id="main-content" class="w-full max-w-4xl hidden">
+        <main class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+                        <section id="cadastro-section" class="bg-white p-6 rounded-lg shadow-lg opacity-50 pointer-events-none transition-opacity">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2 border-secondary">1. Cadastro (Indexação)</h2>
+                <form onsubmit="event.preventDefault(); cadastrarFornecedor();">
+                    <div class="mb-4">
+                        <label for="nomeFornecedor" class="block text-sm font-medium text-gray-700">Nome do Fornecedor *</label>
+                        <input type="text" id="nomeFornecedor" required placeholder="Ex: Metalurgia Brasil"
+                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-secondary focus:border-secondary">
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="segmento" class="block text-sm font-medium text-gray-700">Segmento *</label>
+                        <input type="text" id="segmento" required placeholder="Ex: Metalurgia, Software, Logística"
+                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-secondary focus:border-secondary">
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="urlCatalogo" class="block text-sm font-medium text-gray-700">URL de Catálogo (Opcional)</label>
+                        <input type="url" id="urlCatalogo" placeholder="http://exemplo.com/catalogo.pdf"
+                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-secondary focus:border-secondary">
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="catalogoText" class="block text-sm font-medium text-gray-700">Conteúdo Textual do Catálogo (catalogText)*</label>
+                        <textarea id="catalogoText" rows="6" required placeholder="Cole aqui todas as especificações, descrições detalhadas dos produtos e serviços..."
+                                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-secondary focus:border-secondary"></textarea>
+                    </div>
+                    
+                    <button type="submit"
+                            class="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary transition duration-150">
+                        Cadastrar Fornecedor (Indexar)
+                    </button>
+                </form>
+            </section>
+
+                        <section id="consulta-section" class="bg-white p-6 rounded-lg shadow-lg opacity-50 pointer-events-none transition-opacity">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2 border-secondary">2. Consulta Inteligente (AI)</h2>
+                <div class="mb-4">
+                    <label for="consultaTexto" class="block text-sm font-medium text-gray-700">Consulta do Cliente (Texto)</label>
+                    <textarea id="consultaTexto" rows="3" placeholder="Ex: Preciso de um motor elétrico de alta eficiência para operar em 220V com potência mínima de 5kW."
+                              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-secondary focus:border-secondary"></textarea>
+                </div>
+
+                <div class="mb-6">
+                    <label for="consultaImagem" class="block text-sm font-medium text-gray-700">Consulta do Cliente (Imagem - Opcional)</label>
+                    <input type="file" id="consultaImagem" accept="image/*" class="mt-1 block w-full text-sm text-gray-500
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-full file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-primary file:text-white
+                        hover:file:bg-secondary">
+                    <p class="text-xs text-gray-500 mt-1">Busca multimodal: o texto da consulta será combinado com a imagem.</p>
+                </div>
+                
+                <button onclick="realizarConsultaAI()"
+                        class="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-lg font-medium text-white bg-secondary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150">
+                    Consultar Fornecedor
+                </button>
+                
+                <div class="mt-6 p-4 bg-gray-50 rounded-md border border-gray-200">
+                    <p class="text-sm font-semibold text-gray-700">Resultados da IA</p>
+                    <div id="resultadoIA" class="mt-2 text-gray-800 italic">
+                        Os resultados da IA aparecerão aqui após a consulta.
+                    </div>
+                </div>
+            </section>
+        </main>
+        
+                <section id="listagem-section" class="w-full max-w-4xl bg-white p-6 rounded-lg shadow-lg mt-6 opacity-50 pointer-events-none transition-opacity">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2 border-accent">3. Fornecedores Cadastrados</h2>
+            <div id="fornecedores-list" class="space-y-3">
+                <p class="text-gray-500 italic">Nenhum fornecedor cadastrado ainda.</p>
+            </div>
+        </section>
+    </div>
+    
+    <footer class="mt-8 text-center text-sm text-gray-500">
+        Criado com Google Gemini e Firebase.
+    </footer>
+
+        <script>
+        // Placeholder para a função de consulta da IA
+        function realizarConsultaAI() {
+            // Este é o lugar onde a lógica de chamada ao Gemini API (com o Firestore como fonte) será implementada.
+            document.getElementById('resultadoIA').innerHTML = `<p class="text-accent">Processando consulta...</p>`;
+            console.log("Iniciando consulta à IA...");
+            
+            // Simulação de delay para a API
+            setTimeout(() => {
+                document.getElementById('resultadoIA').innerHTML = `
+                    <p class="font-bold text-green-700">Consulta Concluída (Simulação)</p>
+                    <p class="text-sm">Nenhum fornecedor encontrado no seu catálogo que atenda a essa especificação. Por favor, tente cadastrar mais fornecedores.</p>
+                `;
+            }, 3000);
+        }
+    </script>
 </body>
 </html>
