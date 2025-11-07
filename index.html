@@ -40,24 +40,25 @@
     <!-- Configuração e Imports do Firebase -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, where, doc, getDoc, setDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // IMPORTANTE: Insira suas credenciais do Firebase aqui.
-        // Copie do seu console Firebase > Configurações do Projeto > Seus Apps > Config
+        // ======================================================================
+        // CREDENCIAIS FIREBASE INSERIDAS AUTOMATICAMENTE
+        // ======================================================================
         const firebaseConfig = {
-             apiKey: "SUA_API_KEY_AQUI", // <--- SUBSTITUA AQUI PELA SUA CHAVE REAL
-             authDomain: "SEU_AUTH_DOMAIN_AQUI",
-             projectId: "SEU_PROJECT_ID_AQUI",
-             storageBucket: "SEU_STORAGE_BUCKET_AQUI",
-             messagingSenderId: "SEU_MESSAGING_SENDER_ID_AQUI",
-             appId: "SEU_APP_ID_AQUI"
+             apiKey: "AIzaSyBsyaxPPhNQFWL9xZWQXERb0vimsSMo", 
+             authDomain: "fornecedor-518cc.firebaseapp.com",
+             projectId: "fornecedor-518cc",
+             storageBucket: "fornecedor-518cc.appspot.com",
+             messagingSenderId: "436766837193",
+             appId: "1:436766837193:web:616d318c9fb3c6ca5ce918"
         };
+        // ======================================================================
         
         // As variáveis globais abaixo são injetadas pelo ambiente Canvas.
         // Usamos um fallback seguro caso elas não estejam disponíveis.
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         
         // Variaveis de escopo global para o Firebase (serão preenchidas no init)
         let db;
@@ -77,6 +78,47 @@
             }
         };
 
+        // Função para carregar e exibir os fornecedores em tempo real
+        const loadFornecedores = () => {
+            if (!currentUserId || !db) return;
+
+            // O caminho completo da coleção privada é: /artifacts/{appId}/users/{userId}/fornecedores
+            const collectionPath = `/artifacts/${appId}/users/${currentUserId}/fornecedores`;
+            const fornecedorCollection = collection(db, collectionPath);
+            const fornecedoresListElement = document.getElementById('fornecedores-list');
+            
+            // Usa onSnapshot para escutar em tempo real
+            onSnapshot(fornecedorCollection, (snapshot) => {
+                fornecedoresListElement.innerHTML = ''; // Limpa a lista
+                
+                if (snapshot.empty) {
+                    fornecedoresListElement.innerHTML = '<p class="text-gray-500 italic">Nenhum fornecedor cadastrado ainda.</p>';
+                    return;
+                }
+
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const docId = doc.id; // ID único do documento no Firestore
+
+                    const listItem = document.createElement('div');
+                    listItem.className = 'p-3 mb-2 bg-gray-50 border border-gray-200 rounded-md shadow-sm';
+                    listItem.innerHTML = `
+                        <p class="font-bold text-primary">${data.nome}</p>
+                        <p class="text-sm text-gray-700">Segmento: ${data.segmento}</p>
+                        <p class="text-xs text-gray-500 truncate">ID: ${docId}</p>
+                        <p class="text-xs text-gray-500 mt-1">Texto Indexado: ${data.catalogoText.substring(0, 100)}...</p>
+                        ${data.urlCatalogo ? `<a href="${data.urlCatalogo}" target="_blank" class="text-xs text-secondary hover:underline">Ver Catálogo</a>` : ''}
+                    `;
+                    fornecedoresListElement.appendChild(listItem);
+                });
+
+            }, (error) => {
+                console.error("Erro ao carregar fornecedores: ", error);
+                fornecedoresListElement.innerHTML = `<p class="error-message">Erro ao carregar dados: ${error.message}</p>`;
+            });
+        };
+
+
         // Função para inicializar o Firebase e tentar o login anônimo
         const initializeFirebase = async () => {
             try {
@@ -91,10 +133,15 @@
                 displayStatus("Aguardando autenticação...");
 
                 // 2. Tenta fazer login anonimamente
-                // Como não usamos signInWithCustomToken, vamos direto para o anônimo
                 const userCredential = await signInAnonymously(auth);
                 const user = userCredential.user;
                 currentUserId = user.uid;
+
+                // Verificando se as regras de segurança estão corretas (allow read, write: if request.auth != null)
+                // O caminho correto no Firestore para dados privados: artifacts/{appId}/users/{userId}/fornecedores
+                console.log("UID obtido:", currentUserId);
+                console.log("Caminho esperado da coleção:", `/artifacts/${appId}/users/${currentUserId}/fornecedores`);
+
 
                 displayStatus(`Autenticado com sucesso. ID do Usuário: ${currentUserId.substring(0, 8)}...`);
                 console.log("Autenticação Anônima bem-sucedida. UID:", currentUserId);
@@ -102,13 +149,15 @@
                 // Habilita as áreas de interação após o login
                 document.getElementById('cadastro-section').classList.remove('opacity-50', 'pointer-events-none');
                 document.getElementById('consulta-section').classList.remove('opacity-50', 'pointer-events-none');
+                document.getElementById('listagem-section').classList.remove('opacity-50', 'pointer-events-none');
                 
-                // Agora que o Firebase está pronto, você pode chamar sua função para carregar fornecedores
-                // ex: loadFornecedores(); 
+                // CHAMA A FUNÇÃO DE CARREGAMENTO DE DADOS AQUI
+                loadFornecedores(); 
 
             } catch (error) {
                 console.error("ERRO FATAL DE AUTENTICAÇÃO/FIREBASE:", error);
-                displayStatus("ERRO FATAL: Falha na Autenticação Firebase! Verifique as credenciais no index.html e o status do Login Anônimo no console.", true);
+                // Adicionando instrução para o usuário verificar a autenticação e regras
+                displayStatus("ERRO FATAL: Falha na Autenticação Firebase! Verifique as Regras de Segurança e o status do Login Anônimo no console.", true);
             }
         };
 
@@ -116,19 +165,16 @@
         initializeFirebase();
 
 
-        // Funções de CRUD (Exemplo de como interagir com o Firestore)
-
+        // Funções de CRUD para Cadastro de Fornecedor
         window.cadastrarFornecedor = async () => {
             if (!currentUserId || !db) {
                 displayStatus("Erro: O usuário não está autenticado. Tente recarregar.", true);
                 return;
             }
 
-            // Apenas para demonstração, pegar valores
+            // Pega os valores do formulário
             const nome = document.getElementById('nomeFornecedor').value;
             const segmento = document.getElementById('segmento').value;
-            
-            // Novos campos: URL e Conteúdo Textual
             const urlCatalogo = document.getElementById('urlCatalogo').value;
             const catalogoText = document.getElementById('catalogoText').value;
 
@@ -138,7 +184,7 @@
             }
 
             try {
-                // Caminho da coleção privada. O nome da coleção é 'fornecedores'.
+                // Caminho da coleção privada
                 const collectionPath = `/artifacts/${appId}/users/${currentUserId}/fornecedores`;
                 const fornecedorCollection = collection(db, collectionPath);
                 
@@ -152,7 +198,7 @@
                     userId: currentUserId // Garante o ownership
                 };
 
-                // A função addDoc vai adicionar um novo documento com um ID gerado automaticamente.
+                // Adiciona um novo documento
                 await addDoc(fornecedorCollection, novoFornecedor);
                 displayStatus("Fornecedor cadastrado com sucesso!", false);
                 console.log("Fornecedor cadastrado:", novoFornecedor);
@@ -169,7 +215,7 @@
             }
         };
 
-        // Exemplo de como exportar as instâncias para uso no resto do módulo JS
+        // Exporta instâncias globais
         window.db = db;
         window.auth = auth;
         window.getUserId = () => currentUserId;
@@ -255,7 +301,15 @@
             </div>
         </section>
     </main>
-
+    
+    <!-- Nova Seção de Listagem de Fornecedores -->
+    <section id="listagem-section" class="w-full max-w-4xl bg-white p-6 rounded-lg shadow-lg mt-6 opacity-50 pointer-events-none transition-opacity">
+        <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2 border-accent">3. Fornecedores Cadastrados</h2>
+        <div id="fornecedores-list" class="space-y-3">
+            <p class="text-gray-500 italic">Carregando fornecedores...</p>
+        </div>
+    </section>
+    
     <footer class="mt-8 text-center text-sm text-gray-500">
         Criado com Google Gemini e Firebase.
     </footer>
