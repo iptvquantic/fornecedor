@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FornecedorFinder AI</title>
+    <!-- Carregamento do Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configuração do Google Font Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #2563EB; /* Blue-600 */
+            --secondary-color: #FBBF24; /* Amber-400 */
+            --bg-color: #F8FAFC; /* Slate-50 */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+        }
+        /* Estilos personalizados para a tabela e o formulário */
+        .card {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .btn-primary {
+            background-color: var(--primary-color);
+            transition: background-color 0.2s;
+        }
+        .btn-primary:hover {
+            background-color: #1D4ED8; /* Blue-700 */
+        }
+        .loading-spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #fff;
+            border-radius: 50%;
+            width: 1.5rem;
+            height: 1.5rem;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    <!-- Importações do Firebase -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, onSnapshot, collection, query, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // --- VARIÁVEIS GLOBAIS FIREBASE/APP ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // --- INICIALIZAÇÃO E AUTENTICAÇÃO ---
+        let app;
+        let db;
+        let auth;
+        let userId = null;
+        let isAuthReady = false;
+
+        if (Object.keys(firebaseConfig).length > 0) {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                } else {
+                    try {
+                        // Tenta autenticar anonimamente se o token não estiver presente
+                        await signInAnonymously(auth);
+                        userId = auth.currentUser.uid;
+                    } catch (error) {
+                        console.error("Erro ao fazer login anônimo:", error);
+                    }
+                }
+
+                // Autenticação com Custom Token
+                if (initialAuthToken && !user) {
+                    try {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                        userId = auth.currentUser.uid;
+                    } catch (error) {
+                        console.error("Erro ao fazer login com token personalizado:", error);
+                        // Fallback para anônimo se o token falhar
+                        await signInAnonymously(auth);
+                        userId = auth.currentUser.uid;
+                    }
+                }
+                isAuthReady = true;
+                document.getElementById('userIdDisplay').textContent = `ID do Usuário: ${userId}`;
+                console.log("Firebase Auth e Firestore prontos. User ID:", userId);
+                
+                // Inicia o listener de dados após a autenticação
+                if(db && userId) {
+                    setupRealtimeListener(db, userId, appId);
+                }
+            });
+        } else {
+            console.error("Configuração do Firebase não encontrada. O aplicativo não funcionará corretamente.");
+            document.getElementById('app-container').innerHTML = '<div class="text-center p-8 text-red-500 font-bold">Erro: Configuração do Firebase ausente.</div>';
+        }
+
+        // --- FUNÇÕES DE UTILITY FIREBASE ---
+        const getSupplierCollectionRef = (db, userId, appId) => {
+            if (!db || !userId) return null;
+            // Caminho para dados privados: /artifacts/{appId}/users/{userId}/{collectionName}
+            return collection(db, `artifacts/${appId}/users/${userId}/fornecedores`);
+        };
+
+        // --- MÓDULO DE CADASTRO (INDEXAÇÃO) ---
+        window.handleSupplierSubmit = async (event) => {
+            event.preventDefault();
+            if (!db || !userId) {
+                console.error("Firestore não inicializado ou userId ausente.");
+                showMessage('Erro: Sistema não está pronto. Tente novamente.', 'error');
+                return;
+            }
+
+            const form = event.target;
+            const nome = form.nome.value;
+            const segmento = form.segmento.value;
+            const catalogURL = form.catalogURL.value;
+            const catalogText = form.catalogText.value;
+            
+            if (!nome || !segmento || !catalogText) {
+                showMessage('Por favor, preencha todos os campos obrigatórios (Nome, Segmento, Texto do Catálogo).', 'warning');
+                return;
+            }
+
+            const supplierData = {
+                nome,
+                segmento,
+                catalogURL,
+                catalogText,
+                dataCadastro: serverTimestamp() 
+            };
+            
+            const btn = document.getElementById('saveBtn');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading-spinner"></span> Salvando...';
+
+            try {
+                const colRef = getSupplierCollectionRef(db, userId, appId);
+                await addDoc(colRef, supplierData);
+                form.reset();
+                showMessage('Fornecedor cadastrado com sucesso!', 'success');
+            } catch (e) {
+                console.error("Erro ao adicionar documento: ", e);
+                showMessage('Erro ao salvar fornecedor. Verifique o console.', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        };
+
+        // --- MÓDULO DE VISUALIZAÇÃO DE DADOS (REAL-TIME) ---
+        const setupRealtimeListener = (db, userId, appId) => {
+            const colRef = getSupplierCollectionRef(db, userId, appId);
+            if (!colRef) return;
+
+            const q = query(colRef);
+            
+            onSnapshot(q, (snapshot) => {
+                const suppliers = [];
+                snapshot.forEach((doc) => {
+                    suppliers.push({ id: doc.id, ...doc.data() });
+                });
+                renderSuppliersTable(suppliers);
+            }, (error) => {
+                console.error("Erro ao receber dados em tempo real: ", error);
+                showMessage('Erro ao carregar dados em tempo real. Consulte o console.', 'error');
+            });
+        };
+
+        const renderSuppliersTable = (suppliers) => {
+            const tbody = document.getElementById('suppliersTableBody');
+            tbody.innerHTML = '';
+            
+            if (suppliers.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-gray-500">Nenhum fornecedor cadastrado ainda.</td></tr>';
+                return;
+            }
+
+            suppliers.sort((a, b) => (b.dataCadastro?.toMillis() || 0) - (a.dataCadastro?.toMillis() || 0));
+
+            suppliers.forEach(supplier => {
+                const dateStr = supplier.dataCadastro ? 
+                    new Date(supplier.dataCadastro.seconds * 1000).toLocaleDateString('pt-BR') : 'N/A';
+                
+                const catalogSnippet = supplier.catalogText.substring(0, 50) + (supplier.catalogText.length > 50 ? '...' : '');
+
+                const row = `
+                    <tr class="border-b hover:bg-gray-50 transition duration-150">
+                        <td class="px-6 py-4 font-medium text-gray-900">${supplier.nome}</td>
+                        <td class="px-6 py-4">${supplier.segmento}</td>
+                        <td class="px-6 py-4 text-sm text-gray-500">${catalogSnippet}</td>
+                        <td class="px-6 py-4">
+                            ${supplier.catalogURL ? `<a href="${supplier.catalogURL}" target="_blank" class="text-blue-600 hover:text-blue-800 font-semibold truncate block max-w-[150px]">${supplier.catalogURL.substring(0, 30)}...</a>` : 'N/A'}
+                        </td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+
+            // Armazena todos os catálogos para a consulta da IA
+            window.allCatalogContext = suppliers.map(s => `
+                --- FORNECEDOR: ${s.nome} / SEGMENTO: ${s.segmento} ---
+                URL de Referência: ${s.catalogURL || 'Não fornecida'}
+                DETALHES DO CATÁLOGO:
+                ${s.catalogText}
+                -------------------------------------------------
+            `).join('\n\n');
+        };
+
+        // --- MÓDULO DE CONSULTA INTELIGENTE (IA) ---
+
+        // Helper para converter arquivo em Base64
+        const fileToBase64 = (file) => {
+            return new Promise((resolve, reject) => {
+                if (!file) {
+                    resolve(null);
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = error => reject(error);
+                reader.readAsDataURL(file);
+            });
+        };
+
+        window.handleAiQuery = async (event) => {
+            event.preventDefault();
+            
+            const queryText = document.getElementById('queryText').value;
+            const queryImage = document.getElementById('queryImage').files[0];
+            const resultDiv = document.getElementById('aiResult');
+            const btn = document.getElementById('aiQueryBtn');
+
+            if (!queryText && !queryImage) {
+                showMessage('Digite um texto ou envie uma imagem para a consulta.', 'warning');
+                return;
+            }
+
+            if (!window.allCatalogContext || window.allCatalogContext.trim() === "") {
+                showMessage('Nenhum fornecedor cadastrado. Cadastre catálogos para usar a IA.', 'warning');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading-spinner"></span> Consultando IA...';
+            resultDiv.innerHTML = '<p class="text-center text-gray-500 mt-4">Aguarde a análise dos catálogos pela IA...</p>';
+
+            try {
+                const base64Image = await fileToBase64(queryImage);
+                const catalogContext = window.allCatalogContext;
+                
+                // 1. System Instruction: Define o papel da IA
+                const systemPrompt = `Você é um 'FornecedorFinder AI', um especialista em análise de catálogos e busca de produtos. Sua tarefa é analisar a consulta do cliente e o contexto dos catálogos de fornecedores fornecidos. Você DEVE determinar qual fornecedor, com base nos 'DETALHES DO CATÁLOGO', oferece a melhor solução. Sua resposta deve ser concisa e focada, mencionando o nome do fornecedor e o motivo da escolha.
+
+                O contexto dos catálogos segue o formato:
+                --- FORNECEDOR: [Nome] / SEGMENTO: [Segmento] ---
+                URL de Referência: [URL]
+                DETALHES DO CATÁLOGO:
+                [Conteúdo textual do catálogo]
+                -------------------------------------------------
+
+                Responda em Português.
+                `;
+
+                // 2. Construir o payload da Gemini API
+                const parts = [];
+                // Adiciona o contexto dos catálogos e a consulta do cliente
+                parts.push({ text: `CONTEÚDO TOTAL DOS CATÁLOGOS PARA ANÁLISE:\n${catalogContext}\n\n--- CONSULTA DO CLIENTE ---\nConsulta Textual: "${queryText}"\n\nCom base no contexto acima, qual fornecedor e URL de referência melhor atende à consulta?` });
+                
+                if (base64Image) {
+                    parts.push({
+                        inlineData: {
+                            mimeType: queryImage.type,
+                            data: base64Image
+                        }
+                    });
+                }
+                
+                const payload = {
+                    contents: [{ role: "user", parts: parts }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    // Não usa grounding, pois a resposta deve vir EXCLUSIVAMENTE dos catálogos fornecidos (catalogText)
+                };
+
+                const apiKey = ""; // Deixar vazio, será preenchido pelo ambiente
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+                let response;
+                // Implementação de Backoff Exponencial para a chamada de API
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    try {
+                        const fetchResponse = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (fetchResponse.status === 429 && attempt < 2) {
+                            const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                            continue;
+                        }
+                        response = fetchResponse;
+                        break;
+                    } catch (err) {
+                        if (attempt === 2) throw err;
+                        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
+
+                if (!response || !response.ok) {
+                    throw new Error(`Erro na API: ${response?.statusText || 'Falha na rede'}`);
+                }
+
+                const result = await response.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text || 'Não foi possível gerar uma resposta coerente com os catálogos fornecidos.';
+                
+                // Exibir resultado
+                resultDiv.innerHTML = `
+                    <div class="p-4 bg-green-50 border border-green-200 rounded-lg">
+                        <h4 class="font-bold text-lg text-green-700 mb-2">Resultado da Análise da IA</h4>
+                        <div class="prose max-w-none text-gray-700">${text.replace(/\n/g, '<br>')}</div>
+                    </div>
+                `;
+
+            } catch (e) {
+                console.error("Erro na consulta à IA: ", e);
+                resultDiv.innerHTML = '<p class="text-center text-red-500 mt-4">Erro ao consultar a IA. Detalhes no console.</p>';
+                showMessage('Erro fatal na consulta à IA. Verifique o console.', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = 'Consultar Fornecedor';
+            }
+        };
+
+        // --- MENSAGENS E FEEDBACK ---
+        const messageContainer = document.getElementById('message-container');
+        const showMessage = (text, type = 'info') => {
+            const color = type === 'success' ? 'bg-green-500' : 
+                          type === 'error' ? 'bg-red-500' : 
+                          'bg-yellow-500';
+            const message = document.createElement('div');
+            message.className = `p-3 text-white rounded-lg mb-2 shadow-lg ${color} transition-opacity duration-300`;
+            message.textContent = text;
+            
+            messageContainer.appendChild(message);
+            setTimeout(() => {
+                message.style.opacity = 0;
+                setTimeout(() => message.remove(), 300);
+            }, 5000);
+        };
+
+        // Exportar para uso no HTML
+        window.db = db;
+        window.userId = userId;
+    </script>
+</head>
+<body class="p-4 md:p-8">
+
+    <div id="message-container" class="fixed top-4 right-4 z-50 w-full max-w-xs space-y-2">
+        <!-- Mensagens de feedback aparecerão aqui -->
+    </div>
+
+    <div class="max-w-7xl mx-auto space-y-8" id="app-container">
+
+        <!-- Header -->
+        <header class="text-center p-6 bg-white rounded-xl shadow-lg">
+            <h1 class="text-4xl font-extrabold text-gray-900 tracking-tight">FornecedorFinder AI</h1>
+            <p class="text-gray-500 mt-2">Gerenciamento inteligente de catálogos e consultas via Gemini AI</p>
+            <p id="userIdDisplay" class="text-xs text-gray-400 mt-2 break-all">Aguardando autenticação...</p>
+        </header>
+
+        <!-- Layout Principal: 3 Colunas/Seções -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- Módulo 1: Cadastro de Fornecedor -->
+            <div class="lg:col-span-1 card h-fit">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">1. Cadastro (Indexação)</h2>
+                <form onsubmit="handleSupplierSubmit(event)">
+                    
+                    <div class="mb-4">
+                        <label for="nome" class="block text-sm font-medium text-gray-700 mb-1">Nome do Fornecedor *</label>
+                        <input type="text" id="nome" name="nome" required 
+                               class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="segmento" class="block text-sm font-medium text-gray-700 mb-1">Segmento *</label>
+                        <input type="text" id="segmento" name="segmento" required
+                               class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" placeholder="Ex: Metalurgia, Software, Logística">
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="catalogURL" class="block text-sm font-medium text-gray-700 mb-1">URL de Catálogo (Opcional)</label>
+                        <input type="url" id="catalogURL" name="catalogURL"
+                               class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" placeholder="http://exemplo.com/catalogo.pdf">
+                    </div>
+                    
+                    <div class="mb-6">
+                        <label for="catalogText" class="block text-sm font-medium text-gray-700 mb-1">Conteúdo Textual do Catálogo (catalogText) *</label>
+                        <textarea id="catalogText" name="catalogText" required rows="8"
+                                  class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                  placeholder="Cole aqui todas as especificações, descrições detalhadas dos produtos e serviços deste fornecedor. Este é o contexto principal para a IA."></textarea>
+                    </div>
+
+                    <button type="submit" id="saveBtn" 
+                            class="btn-primary w-full text-white font-bold py-2 px-4 rounded-lg shadow-md hover:shadow-lg flex items-center justify-center">
+                        Cadastrar Fornecedor
+                    </button>
+                </form>
+            </div>
+            
+            <!-- Módulo 2: Consulta Inteligente (IA) -->
+            <div class="lg:col-span-2 card">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">2. Consulta Inteligente (AI)</h2>
+                <form onsubmit="handleAiQuery(event)">
+                    
+                    <div class="mb-4">
+                        <label for="queryText" class="block text-sm font-medium text-gray-700 mb-1">Consulta do Cliente (Texto)</label>
+                        <textarea id="queryText" rows="2" 
+                                  class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                  placeholder="Ex: Preciso de um motor elétrico de alta eficiência para operar em 220V com potência mínima de 5kW."></textarea>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="queryImage" class="block text-sm font-medium text-gray-700 mb-1">Consulta do Cliente (Imagem - Opcional)</label>
+                        <input type="file" id="queryImage" accept="image/*"
+                               class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+                        <p class="text-xs text-gray-400 mt-1">Busca multimodal: o texto da consulta será combinado com a imagem.</p>
+                    </div>
+
+                    <button type="submit" id="aiQueryBtn" 
+                            class="btn-primary w-full text-white font-bold py-3 px-4 rounded-lg shadow-xl hover:shadow-2xl flex items-center justify-center mb-6">
+                        Consultar Fornecedor
+                    </button>
+                </form>
+                
+                <!-- Resultado da IA -->
+                <div id="aiResult">
+                    <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg text-center text-blue-700">
+                        <p>Os resultados da IA aparecerão aqui após a consulta.</p>
+                        <p class="text-sm mt-1">A IA usará o conteúdo de todos os catálogos cadastrados como contexto.</p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Módulo 3: Visualização de Dados em Tempo Real -->
+        <div class="card lg:col-span-3">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">3. Catálogo de Fornecedores Cadastrados (Real-Time)</h2>
+            
+            <div class="overflow-x-auto relative shadow-md sm:rounded-lg">
+                <table class="w-full text-sm text-left text-gray-500">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                        <tr>
+                            <th scope="col" class="py-3 px-6">Nome</th>
+                            <th scope="col" class="py-3 px-6">Segmento</th>
+                            <th scope="col" class="py-3 px-6">Trecho do CatalogText</th>
+                            <th scope="col" class="py-3 px-6">Catalog URL</th>
+                        </tr>
+                    </thead>
+                    <tbody id="suppliersTableBody">
+                        <!-- Linhas preenchidas pelo JS (onSnapshot) -->
+                        <tr><td colspan="4" class="py-4 text-center text-gray-500">Carregando dados...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            
+        </div>
+
+    </div>
+
+</body>
+</html>
